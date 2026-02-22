@@ -1,6 +1,30 @@
 const db = require('../config/database');
 const jwt = require('jsonwebtoken');
 
+// Generate access token
+const generateAccessToken = (user) => {
+    return jwt.sign(
+        { 
+            id: user.id, 
+            username: user.username,
+            email: user.email,
+            role: user.role,
+            employeeId: user.employeeid
+        },
+        process.env.JWT_SECRET,
+        { expiresIn: process.env.ACCESS_TOKEN_EXPIRE || '15m' }
+    );
+};
+
+// Generate refresh token
+const generateRefreshToken = (user) => {
+    return jwt.sign(
+        { id: user.id },
+        process.env.JWT_REFRESH_SECRET,
+        { expiresIn: process.env.REFRESH_TOKEN_EXPIRE || '7d' }
+    );
+};
+
 // Register new user
 const register = async (req, res) => {
     const { username, email, password, employeeId, role } = req.body;
@@ -18,30 +42,39 @@ const register = async (req, res) => {
             });
         }
 
-        // Insert new user (storing plain password as requested)
+        // Insert new user
         const result = await db.query(
             `INSERT INTO Users (Username, Email, Password, EmployeeId, Role) 
              VALUES ($1, $2, $3, $4, $5) RETURNING Id, Username, Email, Role, EmployeeId, CreatedAt`,
             [username, email, password, employeeId || null, role || 'employee']
         );
 
-        // Generate JWT token
-        const token = jwt.sign(
-            { 
-                id: result.rows[0].id, 
-                username: result.rows[0].username,
-                email: result.rows[0].email,
-                role: result.rows[0].role,
-                employeeId: result.rows[0].employeeid
-            },
-            process.env.JWT_SECRET,
-            { expiresIn: '7d' }
+        const newUser = result.rows[0];
+
+        // Generate tokens
+        const accessToken = generateAccessToken(newUser);
+        const refreshToken = generateRefreshToken(newUser);
+
+        // Save refresh token to database
+        const refreshTokenExpiry = new Date();
+        refreshTokenExpiry.setDate(refreshTokenExpiry.getDate() + 7); // 7 days from now
+
+        await db.query(
+            'UPDATE Users SET RefreshToken = $1, RefreshTokenExpiry = $2 WHERE Id = $3',
+            [refreshToken, refreshTokenExpiry, newUser.id]
         );
 
         res.status(201).json({
             message: 'User registered successfully',
-            user: result.rows[0],
-            token
+            user: {
+                id: newUser.id,
+                username: newUser.username,
+                email: newUser.email,
+                role: newUser.role,
+                employeeId: newUser.employeeid
+            },
+            accessToken,
+            refreshToken
         });
 
     } catch (error) {
@@ -82,6 +115,19 @@ const login = async (req, res) => {
             return res.status(401).json({ error: 'Invalid credentials' });
         }
 
+        // Generate tokens
+        const accessToken = generateAccessToken(userData);
+        const refreshToken = generateRefreshToken(userData);
+
+        // Save refresh token to database
+        const refreshTokenExpiry = new Date();
+        refreshTokenExpiry.setDate(refreshTokenExpiry.getDate() + 7); // 7 days from now
+
+        await db.query(
+            'UPDATE Users SET RefreshToken = $1, RefreshTokenExpiry = $2, UpdatedAt = CURRENT_TIMESTAMP WHERE Id = $3',
+            [refreshToken, refreshTokenExpiry, userData.id]
+        );
+
         // Get employee details if linked
         let employeeDetails = null;
         if (userData.employeeid) {
@@ -98,25 +144,6 @@ const login = async (req, res) => {
             }
         }
 
-        // Update updated_at timestamp
-        await db.query(
-            'UPDATE Users SET UpdatedAt = CURRENT_TIMESTAMP WHERE Id = $1',
-            [userData.id]
-        );
-
-        // Generate JWT token
-        const token = jwt.sign(
-            { 
-                id: userData.id, 
-                username: userData.username,
-                email: userData.email,
-                role: userData.role,
-                employeeId: userData.employeeid
-            },
-            process.env.JWT_SECRET,
-            { expiresIn: '7d' }
-        );
-
         res.json({
             message: 'Login successful',
             user: {
@@ -127,7 +154,8 @@ const login = async (req, res) => {
                 employeeId: userData.employeeid,
                 employee: employeeDetails
             },
-            token
+            accessToken,
+            refreshToken
         });
 
     } catch (error) {
@@ -136,10 +164,82 @@ const login = async (req, res) => {
     }
 };
 
-// Get current user profile
+// Refresh token endpoint
+const refreshToken = async (req, res) => {
+    const { refreshToken } = req.body;
+
+    if (!refreshToken) {
+        return res.status(401).json({ error: 'Refresh token required' });
+    }
+
+    try {
+        // Verify refresh token
+        const decoded = jwt.verify(refreshToken, process.env.JWT_REFRESH_SECRET);
+
+        // Check if refresh token exists in database and is not expired
+        const user = await db.query(
+            'SELECT * FROM Users WHERE Id = $1 AND RefreshToken = $2 AND RefreshTokenExpiry > NOW()',
+            [decoded.id, refreshToken]
+        );
+
+        if (user.rows.length === 0) {
+            return res.status(403).json({ error: 'Invalid or expired refresh token' });
+        }
+
+        const userData = user.rows[0];
+
+        // Generate new access token
+        const newAccessToken = generateAccessToken(userData);
+
+        // Optionally generate new refresh token (refresh token rotation)
+        const newRefreshToken = generateRefreshToken(userData);
+        
+        // Update refresh token in database
+        const refreshTokenExpiry = new Date();
+        refreshTokenExpiry.setDate(refreshTokenExpiry.getDate() + 7);
+
+        await db.query(
+            'UPDATE Users SET RefreshToken = $1, RefreshTokenExpiry = $2 WHERE Id = $3',
+            [newRefreshToken, refreshTokenExpiry, userData.id]
+        );
+
+        res.json({
+            accessToken: newAccessToken,
+            refreshToken: newRefreshToken
+        });
+
+    } catch (error) {
+        console.error('Refresh token error:', error);
+        return res.status(403).json({ error: 'Invalid or expired refresh token' });
+    }
+};
+
+// Logout (invalidate refresh token)
+const logout = async (req, res) => {
+    const { refreshToken } = req.body;
+
+    if (!refreshToken) {
+        return res.status(400).json({ error: 'Refresh token required' });
+    }
+
+    try {
+        // Remove refresh token from database
+        await db.query(
+            'UPDATE Users SET RefreshToken = NULL, RefreshTokenExpiry = NULL WHERE RefreshToken = $1',
+            [refreshToken]
+        );
+
+        res.json({ message: 'Logged out successfully' });
+    } catch (error) {
+        console.error('Logout error:', error);
+        res.status(500).json({ error: 'Server error during logout' });
+    }
+};
+
+// Get current user profile (protected)
 const getCurrentUser = async (req, res) => {
     try {
-        const userId = req.user.id; // From auth middleware
+        const userId = req.user.id;
         
         const result = await db.query(
             `SELECT u.Id, u.Username, u.Email, u.Role, u.EmployeeId, u.CreatedAt,
@@ -245,6 +345,8 @@ const getAllUsers = async (req, res) => {
 module.exports = {
     register,
     login,
+    refreshToken,
+    logout,
     getCurrentUser,
     updateUser,
     getAllUsers

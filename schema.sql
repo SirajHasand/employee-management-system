@@ -102,6 +102,13 @@ CREATE TABLE Users (
 CREATE INDEX idx_users_username ON Users(Username);
 CREATE INDEX idx_users_email ON Users(Email);
 
+
+-- Add refresh token column to Users table
+ALTER TABLE Users 
+ADD COLUMN RefreshToken VARCHAR(255) NULL,
+ADD COLUMN RefreshTokenExpiry TIMESTAMP NULL;
+
+
 -- Create indexes for better performance
 CREATE INDEX idx_employee_department ON Employee(DepartmentId);
 CREATE INDEX idx_employee_position ON Employee(PositionId);
