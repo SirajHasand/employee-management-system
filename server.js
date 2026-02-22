@@ -10,6 +10,7 @@ const addressRoutes = require('./routes/addressRoutes');
 const salaryRoutes = require('./routes/salaryRoutes');
 const documentRoutes = require('./routes/documentRoutes');
 const attendanceRoutes = require('./routes/attendanceRoutes');
+const userRoutes = require('./routes/userRoutes'); // Add this line
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -27,6 +28,7 @@ app.use('/api/employees/:employeeId/addresses', addressRoutes);
 app.use('/api/employees/:employeeId/salaries', salaryRoutes);
 app.use('/api/employees/:employeeId/documents', documentRoutes);
 app.use('/api/employees/:employeeId/attendance', attendanceRoutes);
+app.use('/api/users', userRoutes); // Add this line
 
 // Root route
 app.get('/', (req, res) => {

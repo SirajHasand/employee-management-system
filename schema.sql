@@ -85,6 +85,22 @@ CREATE TABLE EmployeeAttendance (
     FOREIGN KEY (EmployeeId) REFERENCES Employee(Id) ON DELETE CASCADE,
     UNIQUE(EmployeeId, Date)
 );
+-- Add Users table for authentication (simplified)
+CREATE TABLE Users (
+    Id SERIAL PRIMARY KEY,
+    Username VARCHAR(50) NOT NULL UNIQUE,
+    Email VARCHAR(100) NOT NULL UNIQUE,
+    Password VARCHAR(255) NOT NULL,
+    EmployeeId INTEGER NULL,
+    Role VARCHAR(20) DEFAULT 'employee',
+    CreatedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UpdatedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (EmployeeId) REFERENCES Employee(Id) ON DELETE SET NULL
+);
+
+-- Create index for faster login queries
+CREATE INDEX idx_users_username ON Users(Username);
+CREATE INDEX idx_users_email ON Users(Email);
 
 -- Create indexes for better performance
 CREATE INDEX idx_employee_department ON Employee(DepartmentId);
