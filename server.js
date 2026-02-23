@@ -1,6 +1,7 @@
 const express = require('express');
 const cors = require('cors');
 const bodyParser = require('body-parser');
+const cookieParser = require('cookie-parser'); // ONLY ADD THIS
 require('dotenv').config();
 
 const departmentRoutes = require('./routes/departmentRoutes');
@@ -10,15 +11,19 @@ const addressRoutes = require('./routes/addressRoutes');
 const salaryRoutes = require('./routes/salaryRoutes');
 const documentRoutes = require('./routes/documentRoutes');
 const attendanceRoutes = require('./routes/attendanceRoutes');
-const userRoutes = require('./routes/userRoutes'); // Add this line
+const userRoutes = require('./routes/userRoutes');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
 // Middleware
-app.use(cors());
+app.use(cors({
+    origin: process.env.FRONTEND_URL || 'http://localhost:3000',
+    credentials: true // ONLY ADD THIS - allows cookies
+}));
 app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: true }));
+app.use(cookieParser()); // ONLY ADD THIS - parses cookies
 
 // Routes
 app.use('/api/departments', departmentRoutes);
@@ -28,7 +33,7 @@ app.use('/api/employees/:employeeId/addresses', addressRoutes);
 app.use('/api/employees/:employeeId/salaries', salaryRoutes);
 app.use('/api/employees/:employeeId/documents', documentRoutes);
 app.use('/api/employees/:employeeId/attendance', attendanceRoutes);
-app.use('/api/users', userRoutes); // Add this line
+app.use('/api/users', userRoutes);
 
 // Root route
 app.get('/', (req, res) => {

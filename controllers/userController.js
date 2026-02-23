@@ -25,6 +25,15 @@ const generateRefreshToken = (user) => {
     );
 };
 
+// Cookie options for refresh token
+const refreshTokenCookieOptions = {
+    httpOnly: true,        // Prevents JavaScript access
+    secure: process.env.NODE_ENV === 'production', // HTTPS only in production
+    sameSite: 'strict',    // CSRF protection
+    maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days in milliseconds
+    path: '/api/auth/refresh-token' // Only sent to refresh endpoint
+};
+
 // Register new user
 const register = async (req, res) => {
     const { username, email, password, employeeId, role } = req.body;
@@ -64,6 +73,9 @@ const register = async (req, res) => {
             [refreshToken, refreshTokenExpiry, newUser.id]
         );
 
+        // Set refresh token in HTTP-only cookie
+        res.cookie('refreshToken', refreshToken, refreshTokenCookieOptions);
+
         res.status(201).json({
             message: 'User registered successfully',
             user: {
@@ -74,7 +86,7 @@ const register = async (req, res) => {
                 employeeId: newUser.employeeid
             },
             accessToken,
-            refreshToken
+
         });
 
     } catch (error) {
@@ -144,6 +156,9 @@ const login = async (req, res) => {
             }
         }
 
+        // Set refresh token in HTTP-only cookie
+        res.cookie('refreshToken', refreshToken, refreshTokenCookieOptions);
+
         res.json({
             message: 'Login successful',
             user: {
@@ -154,8 +169,8 @@ const login = async (req, res) => {
                 employeeId: userData.employeeid,
                 employee: employeeDetails
             },
-            accessToken,
-            refreshToken
+            accessToken
+            // refreshToken is NOT sent in JSON body anymore
         });
 
     } catch (error) {
@@ -164,9 +179,9 @@ const login = async (req, res) => {
     }
 };
 
-// Refresh token endpoint
+// Refresh token endpoint - NOW READS FROM COOKIE
 const refreshToken = async (req, res) => {
-    const { refreshToken } = req.body;
+    const refreshToken = req.cookies?.refreshToken;
 
     if (!refreshToken) {
         return res.status(401).json({ error: 'Refresh token required' });
@@ -203,20 +218,28 @@ const refreshToken = async (req, res) => {
             [newRefreshToken, refreshTokenExpiry, userData.id]
         );
 
+        // Set new refresh token in cookie
+        res.cookie('refreshToken', newRefreshToken, refreshTokenCookieOptions);
+
         res.json({
-            accessToken: newAccessToken,
-            refreshToken: newRefreshToken
+            accessToken: newAccessToken
+            // refreshToken is NOT sent in JSON body
         });
 
     } catch (error) {
         console.error('Refresh token error:', error);
+        
+        // Clear invalid refresh token cookie
+        res.clearCookie('refreshToken', { path: '/api/auth/refresh-token' });
+        
         return res.status(403).json({ error: 'Invalid or expired refresh token' });
     }
 };
 
 // Logout (invalidate refresh token)
 const logout = async (req, res) => {
-    const { refreshToken } = req.body;
+    // Get refresh token from cookie
+    const refreshToken = req.cookies?.refreshToken;
 
     if (!refreshToken) {
         return res.status(400).json({ error: 'Refresh token required' });
@@ -228,6 +251,9 @@ const logout = async (req, res) => {
             'UPDATE Users SET RefreshToken = NULL, RefreshTokenExpiry = NULL WHERE RefreshToken = $1',
             [refreshToken]
         );
+
+        // Clear the refresh token cookie
+        res.clearCookie('refreshToken', { path: '/api/auth/refresh-token' });
 
         res.json({ message: 'Logged out successfully' });
     } catch (error) {
