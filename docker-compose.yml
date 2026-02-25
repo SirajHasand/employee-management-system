@@ -1,0 +1,47 @@
+version: '3.8'
+
+services:
+  app:
+    build: .
+    ports:
+      - "3000:3000"
+    env_file:
+      - .env
+    environment:
+      - NODE_ENV=production
+      - PORT=3000
+      - DB_HOST=postgres
+      - DB_PORT=5432
+      - DB_USER={{POSTGRES_USER : postgres}}
+      - DB_PASSWORD=post123
+      - DB_DATABASE=employee_db
+    depends_on:
+      - postgres
+    restart: unless-stopped 
+
+    # Add a small delay to ensure postgres is ready
+    command: >
+      sh -c "sleep 10 && npm start" 
+    
+    # Optional healthcheck for the app service
+    # healthcheck:
+    #   test: ["executable", "arg"]
+    #   interval: 1m30s
+    #   timeout: 30s
+    #   retries: 5
+    #   start_period: 30s
+  postgres:
+    image: postgres:13-alpine
+    environment:
+      - POSTGRES_DB=employee_db
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=post123
+    ports:
+      - "5432:5432"
+    volumes: 
+      - postgres_data:/var/lib/postgresql/data
+      - ./db-init:/docker-entrypoint-initdb.d
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
