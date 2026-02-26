@@ -9,18 +9,15 @@ services:
       - NODE_ENV=production
       - PORT=3000
       - DB_HOST=postgres
-      - DB_PORT=5432
-      - DB_USER={{POSTGRES_USER : postgres}}
+      - DB_PORT=5432        # internal container port stays the same
+      - DB_USER=postgres
       - DB_PASSWORD=post123
       - DB_DATABASE=employee_db
     depends_on:
       - postgres
-    restart: unless-stopped 
-
-    # Add a small delay to ensure postgres is ready
-    
+    restart: unless-stopped
     command: >
-      sh -c "sleep 10 && npm start" 
+      sh -c "sleep 10 && npm start"
 
   postgres:
     image: postgres:13-alpine
@@ -29,8 +26,8 @@ services:
       - POSTGRES_USER=postgres
       - POSTGRES_PASSWORD=post123
     ports:
-      - "5432:5432"
-    volumes: 
+      - "5433:5432"        # changed host port to 5433
+    volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./db-init:/docker-entrypoint-initdb.d
     restart: unless-stopped
